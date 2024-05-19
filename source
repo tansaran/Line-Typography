@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Canvas</title>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+        }
+        #container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            background: transparent;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="myCanvas"></canvas>
+    </div>
+    <script>
+        var Typo = {}; 
+        
+        (function(Typo) {
+            
+            var canvas, context, mouse = { x: -99999, y: -99999 }, nodes = [], dirtyRegions = [], inputForce = force = 0, input = forceFactor = false, FPS = 60;
+            var text = 'cinema', interactive = true;
+                
+            Typo.init = function() {
+                
+                canvas = document.getElementById('myCanvas');
+                    
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                
+                if (Typo.gotSupport()) {
+                    context = canvas.getContext('2d');
+                    
+                    if ('ontouchstart' in window) {
+                        canvas.addEventListener('touchstart', Typo.onTouchStart, false);
+                        canvas.addEventListener('touchend', Typo.onTouchEnd, false);
+                        canvas.addEventListener('touchmove', Typo.onTouchMove, false);
+                    } else {
+                        canvas.addEventListener('mousedown', Typo.onMouseDown, false);
+                        canvas.addEventListener('mouseup', Typo.onMouseUp, false);
+                        canvas.addEventListener('mousemove', Typo.onMouseMove, false);
+                    }
+                    
+                    window.onresize = onResize;
+                    
+                    Typo.buildTexture();
+                } else {
+                    console.error("Sorry, your browser doesn't support canvas.");
+                }
+            };
+            
+            function onResize() {
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+                nodes = [], dirtyRegions = [];
+            }
+            
+            Typo.gotSupport = function() {
+                return canvas.getContext && canvas.getContext('2d');
+            };
+            
+            Typo.onMouseDown = function(event) {
+                event.preventDefault();
+                forceFactor = true;
+            };
+            
+            Typo.onMouseUp = function(event) {
+                event.preventDefault();
+                forceFactor = false;
+            };
+            
+            Typo.onMouseMove = function(event) {
+                event.preventDefault();
+                mouse.x = event.pageX - canvas.offsetLeft;
+                mouse.y = event.pageY - canvas.offsetTop;
+            };
+            
+            Typo.onTouchStart = function(event) {
+                event.preventDefault();
+                forceFactor = true;
+            };
+            
+            Typo.onTouchEnd = function(event) {
+                event.preventDefault();
+                forceFactor = false;
+            };
+            
+            Typo.onTouchMove = function(event) {
+                event.preventDefault();
+                mouse.x = event.touches[0].pageX - canvas.offsetLeft;
+                mouse.y = event.touches[0].pageY - canvas.offsetTop;
+            };
+            
+            Typo.buildTexture = function() {
+                context.clearRect(0, 0, canvas.width, canvas.height);
+            
+                if (nodes.length === 0) {
+                    context.font = canvas.width / 7 + 'px Arial';
+                    context.fillStyle = '#FAF5FF';        
+                    context.textAlign = 'center';
+                    context.fillText(text, canvas.width * 0.5, canvas.height * 0.55);
+                    
+                    var surface = context.getImageData(0, 0, canvas.width, canvas.height);
+                    
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    for (var width = 0; width < surface.width; width += 12) {
+                        for (var height = 0; height < surface.height; height += 12) {
+                            var color = surface.data[(height * surface.width * 4) + (width * 4) - 1];
+                            if (color === 255) {    
+                                var x = canvas.width * 0.5;
+                                var y = canvas.height * 0.5;
+                                var radius = 2 + Math.random() * 5;
+                                nodes.push({ x: x, y: y, vx: 0, vy: 0, goalX: width, goalY: height, radius: radius });
+                                dirtyRegions.push({ x: x, y: y, radius: radius });
+                            }
+                        }
+                    }
+                }
+            
+                Typo.clear();
+                Typo.update();
+                Typo.render();
+                
+                requestAnimFrame(Typo.buildTexture);
+            };
+            
+            Typo.clear = function() {
+                [].forEach.call(dirtyRegions, function(dirty) {
+                    var width = (2 * dirty.radius) + 4;
+                    var height = width;
+                    var x = dirty.x - (width / 2);
+                    var y = dirty.y - (height / 2);
+                    context.clearRect(Math.floor(x), Math.floor(y), Math.ceil(width), Math.ceil(height));
+                });
+            };
+            
+            Typo.update = function() {
+                [].forEach.call(nodes, function(node, index) {
+                    if (!interactive) {
+                        mouse.x = canvas.width * 0.5 + Math.sin(force) * context.measureText(text).width * 0.5;
+                        mouse.y = canvas.height * 0.47;
+                        force += 0.0001;
+                    }   
+                    var angle = Math.atan2(node.y - mouse.y, node.x - mouse.x);
+                    node.vx += Math.cos(angle) * Typo.distanceTo(mouse, node, true) + (node.goalX - node.x) * 0.1;
+                    node.vy += Math.sin(angle) * Typo.distanceTo(mouse, node, true) + (node.goalY - node.y) * 0.1;
+                    node.vx *= 0.7;
+                    node.vy *= 0.7;
+                    node.x += node.vx;
+                    node.y += node.vy;    
+                    if (!!forceFactor) 
+                        inputForce = Math.min(inputForce + 1, 2000);
+                    else
+                        inputForce = Math.max(inputForce - 1, 0);
+                    for (var nextMolecule = index + 1; nextMolecule < nodes.length; nextMolecule++) {
+                        var otherMolecule = nodes[nextMolecule];
+                        if (Typo.distanceTo(node, otherMolecule) < 50) {
+                            context.save();
+                            context.beginPath();
+                            context.globalCompositeOperation = 'destination-over';
+                            context.globalAlpha = 1 - Typo.distanceTo(node, otherMolecule) / 100;
+                            context.lineWidth = 1;
+                            context.strokeStyle = '#FAF5FF';
+                            context.moveTo(node.x, node.y);
+                            context.lineTo(otherMolecule.x, otherMolecule.y);
+                            context.stroke();
+                            context.closePath();
+                            context.restore();
+                        }
+                    }
+                });
+            };
+            
+            Typo.render = function() {
+                [].forEach.call(nodes, function(node, index) {
+                    context.save();
+                    context.fillStyle = '#FAF5FF';
+                    context.translate(node.x, node.y);
+                    context.beginPath();
+                    context.arc(0, 0, node.radius, 0, Math.PI * 2);
+                    context.fill();
+                    context.restore();
+                    dirtyRegions[index].x = node.x;
+                    dirtyRegions[index].y = node.y;
+                    dirtyRegions[index].radius = node.radius;
+                });
+            };
+            
+            Typo.distanceTo = function(pointA, pointB, angle) {
+                var dx = Math.abs(pointA.x - pointB.x);
+                var dy = Math.abs(pointA.y - pointB.y);
+                if (angle) 
+                    return (1000 + (interactive ? inputForce : 0)) / Math.sqrt(dx * dx + dy * dy);
+                else
+                    return Math.sqrt(dx * dx + dy * dy);
+            };
+            
+            window.requestAnimFrame = (function() {
+                return window.requestAnimationFrame || 
+                       window.webkitRequestAnimationFrame || 
+                       window.mozRequestAnimationFrame || 
+                       window.oRequestAnimationFrame || 
+                       window.msRequestAnimationFrame || 
+                       function(callback) {
+                           window.setTimeout(callback, 1000 / FPS);
+                       };
+            })();
+
+            window.addEventListener ? window.addEventListener('load', Typo.init, false) : window.onload = Typo.init;
+        })(Typo);
+    </script>
+</body>
+</html>
